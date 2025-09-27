@@ -4,10 +4,16 @@
 #include <linux/device.h>
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
+#if 0
 #include <linux/gpio.h>
+#else
+#include <linux/gpio/consumer.h>   // new GPIO descriptor API
+#endif
 #include <linux/interrupt.h>
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
+#include <linux/string.h>
+#include <linux/printk.h>
 
 #define DEVICE_NAME "myrt"
 #define CLASS_NAME  "myrtclass"
@@ -18,6 +24,9 @@
 
 // PWM config (1 kHz)
 #define PWM_PERIOD_NS 1000000L   // 1 ms = 1 kHz
+
+struct gpio_desc *gpio_pwm = NULL; 
+struct gpio_desc *gpio_meas = NULL;
 
 static int irq_number;
 static ktime_t last_edge;
@@ -54,9 +63,17 @@ static enum hrtimer_restart pwm_timer_callback(struct hrtimer *timer)
 
     counter = (counter + 1) % 100;
     if (counter < duty_cycle) {
+#if 0        
         gpio_set_value(GPIO_PWM, 1);
+#else
+        gpiod_set_value(gpio_pwm, 1);
+#endif
     } else {
+#if 0        
         gpio_set_value(GPIO_PWM, 0);
+#else
+        gpiod_set_value(gpio_pwm, 0);
+#endif
     }
 
     interval = ktime_set(0, PWM_PERIOD_NS/100); // divide into 100 steps
@@ -121,6 +138,7 @@ static int __init myrt_init(void)
     }
 
     // setup GPIOs
+#if 0    
     if (!gpio_is_valid(GPIO_PWM) || !gpio_is_valid(GPIO_MEAS)) {
         pr_err("invalid GPIOs\n");
         return -ENODEV;
@@ -130,8 +148,18 @@ static int __init myrt_init(void)
 
     gpio_request(GPIO_MEAS, "MEAS_IN");
     gpio_direction_input(GPIO_MEAS);
-
     irq_number = gpio_to_irq(GPIO_MEAS);
+#else
+
+gpio_pwm  = gpiod_get(NULL, "PWM_OUT", GPIOD_OUT_LOW);
+if (IS_ERR(gpio_pwm)) return PTR_ERR(gpio_pwm);
+
+gpio_meas = gpiod_get(NULL, "MEAS_IN", GPIOD_IN);
+if (IS_ERR(gpio_meas)) return PTR_ERR(gpio_meas);
+
+irq_number = gpiod_to_irq(gpio_meas);
+#endif
+
     ret = request_irq(irq_number, gpio_irq_handler,
                       IRQF_TRIGGER_RISING | IRQF_ONESHOT,
                       "myrt_gpio_irq", NULL);
@@ -155,8 +183,13 @@ static void __exit myrt_exit(void)
 {
     hrtimer_cancel(&pwm_timer);
     free_irq(irq_number, NULL);
+#if 0
     gpio_free(GPIO_PWM);
     gpio_free(GPIO_MEAS);
+#else
+    gpiod_put(gpio_pwm);
+    gpiod_put(gpio_meas);
+#endif
     device_destroy(myrt_class, MKDEV(major,0));
     class_destroy(myrt_class);
     unregister_chrdev(major, DEVICE_NAME);
