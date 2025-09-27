@@ -37,7 +37,8 @@ static struct cdev my_cdev;
 static irqreturn_t gpio_irq_handler(int irq, void *dev_id)
 {
     ktime_t now = ktime_get();
-    if (!ktime_equal(last_edge, ktime_set(0,0))) {
+    //if (!ktime_equal(last_edge, ktime_set(0,0))) {
+    if (!ktime_compare(last_edge, ktime_set(0,0))) {
         s64 delta = ktime_us_delta(now, last_edge);
         period_us = delta;
     }
