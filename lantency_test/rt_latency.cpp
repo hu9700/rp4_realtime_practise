@@ -50,6 +50,9 @@ int main(int argc, char** argv) {
     // Set SCHED_FIFO priority high (needs root or CAP_SYS_NICE)
     struct sched_param sp;
     sp.sched_priority = 80;
+    //as an alternative to sched_setscheduler
+    //use command
+    //chrt -f 80 ./rt_latency
     if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
         perror("sched_setscheduler");
         fprintf(stderr, "Warning: couldn't set SCHED_FIFO. Run as root or with CAP_SYS_NICE to get real-time priority.\n");
