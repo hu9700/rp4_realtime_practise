@@ -82,7 +82,7 @@ static ssize_t myrt_write(struct file *filep, const char __user *buffer,
     if (len >= sizeof(msg)) return -EINVAL;
     if (copy_from_user(msg, buffer, len)) return -EFAULT;
     msg[len] = '\0';
-    kstrtoint(msg, 10, &duty_cycle);
+    (void)kstrtoint(msg, 10, &duty_cycle);
     if (duty_cycle < 0) duty_cycle = 0;
     if (duty_cycle > 100) duty_cycle = 100;
     pr_info("myrt: duty cycle set to %d%%\n", duty_cycle);
@@ -106,7 +106,8 @@ static int __init myrt_init(void)
         pr_err("failed to register char device\n");
         return major;
     }
-    myrt_class = class_create(THIS_MODULE, CLASS_NAME);
+    //myrt_class = class_create(THIS_MODULE, CLASS_NAME);
+    myrt_class = class_create(CLASS_NAME);
     if (IS_ERR(myrt_class)) {
         unregister_chrdev(major, DEVICE_NAME);
         return PTR_ERR(myrt_class);
