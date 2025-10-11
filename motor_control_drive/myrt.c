@@ -1,10 +1,12 @@
+#define USE_GPIOD   (1)
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/device.h>
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
-#if 0
+#if USE_GPIOD == 0
 #include <linux/gpio.h>
 #else
 #include <linux/gpio/consumer.h>   // new GPIO descriptor API
@@ -25,8 +27,10 @@
 // PWM config (1 kHz)
 #define PWM_PERIOD_NS 1000000L   // 1 ms = 1 kHz
 
+#if USE_GPIOD
 struct gpio_desc *gpio_pwm = NULL; 
 struct gpio_desc *gpio_meas = NULL;
+#endif
 
 static int irq_number;
 static ktime_t last_edge;
@@ -63,13 +67,13 @@ static enum hrtimer_restart pwm_timer_callback(struct hrtimer *timer)
 
     counter = (counter + 1) % 100;
     if (counter < duty_cycle) {
-#if 0        
+#if USE_GPIOD == 0  
         gpio_set_value(GPIO_PWM, 1);
 #else
         gpiod_set_value(gpio_pwm, 1);
 #endif
     } else {
-#if 0        
+#if USE_GPIOD == 0
         gpio_set_value(GPIO_PWM, 0);
 #else
         gpiod_set_value(gpio_pwm, 0);
@@ -124,21 +128,37 @@ static int __init myrt_init(void)
         pr_err("failed to register char device\n");
         return major;
     }
+
     //myrt_class = class_create(THIS_MODULE, CLASS_NAME);
     myrt_class = class_create(CLASS_NAME);
     if (IS_ERR(myrt_class)) {
-        unregister_chrdev(major, DEVICE_NAME);
-        return PTR_ERR(myrt_class);
-    }
+        if (PTR_ERR(myrt_class) == -EEXIST) {
+            pr_warn("myrt: class '%s' already exists, removing and retrying\n", CLASS_NAME);
+            // Remove old one manually
+            class_destroy(myrt_class); // this will be NULL or invalid pointer
+            myrt_class = NULL;
+
+            // Try again after cleanup
+            myrt_class = class_create(CLASS_NAME);
+        }
+
+        if (IS_ERR(myrt_class)) {
+            unregister_chrdev(major, DEVICE_NAME);
+            pr_err("myrt: failed to create class\n");
+            return PTR_ERR(myrt_class);
+        }
+    }    
+
     myrt_device = device_create(myrt_class, NULL, MKDEV(major,0), NULL, DEVICE_NAME);
     if (IS_ERR(myrt_device)) {
         class_destroy(myrt_class);
         unregister_chrdev(major, DEVICE_NAME);
+        pr_err("myrt: failed to create device\n");
         return PTR_ERR(myrt_device);
     }
 
     // setup GPIOs
-#if 0    
+#if USE_GPIOD == 0    
     if (!gpio_is_valid(GPIO_PWM) || !gpio_is_valid(GPIO_MEAS)) {
         pr_err("invalid GPIOs\n");
         return -ENODEV;
@@ -151,13 +171,13 @@ static int __init myrt_init(void)
     irq_number = gpio_to_irq(GPIO_MEAS);
 #else
 
-gpio_pwm  = gpiod_get(NULL, "PWM_OUT", GPIOD_OUT_LOW);
-if (IS_ERR(gpio_pwm)) return PTR_ERR(gpio_pwm);
+    gpio_pwm  = gpiod_get(NULL, "PWM_OUT", GPIOD_OUT_LOW);
+    if (IS_ERR(gpio_pwm)) return PTR_ERR(gpio_pwm);
 
-gpio_meas = gpiod_get(NULL, "MEAS_IN", GPIOD_IN);
-if (IS_ERR(gpio_meas)) return PTR_ERR(gpio_meas);
+    gpio_meas = gpiod_get(NULL, "MEAS_IN", GPIOD_IN);
+    if (IS_ERR(gpio_meas)) return PTR_ERR(gpio_meas);
 
-irq_number = gpiod_to_irq(gpio_meas);
+    irq_number = gpiod_to_irq(gpio_meas);
 #endif
 
     ret = request_irq(irq_number, gpio_irq_handler,
@@ -183,7 +203,7 @@ static void __exit myrt_exit(void)
 {
     hrtimer_cancel(&pwm_timer);
     free_irq(irq_number, NULL);
-#if 0
+#if USE_GPIOD == 0
     gpio_free(GPIO_PWM);
     gpio_free(GPIO_MEAS);
 #else
