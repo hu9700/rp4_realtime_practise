@@ -1,0 +1,23 @@
+Load module
+sudo insmod myrt.ko
+dmesg | tail
+
+you should see myrt: module loaded. A device /dev/myrt will appear.
+
+If not, create manually:
+sudo mknod /dev/myrt c <major> 0
+sudo chmod 666 /dev/myrt
+
+(major is printed in dmesg or check with cat /proc/devices.)
+
+Unload
+sudo rmmod myrt
+
+
+Test usage
+Set duty cycle to 25%:
+echo 25 | sudo tee /dev/myrt
+
+
+Read measured period between rising edges on GPIO16:
+cat /dev/myrt
